@@ -21,18 +21,46 @@ import (
 var db *sql.DB
 
 type result struct {
-	IncidentId      string
+	IncidentId  string
 	DisplayName string
 	Description string
 	Snippet     template.HTML
 }
 
-type incrul struct {
-	IncidentId  string
-	CreatedTime time.Time
-	UpdateTime  time.Time
+type homeItem struct {
+	IncidentId string
+	RuleId     string
+	Target     string
+	Snippet    template.HTML
+}
+
+type searchItem struct {
+	IncidentId string
+	Fields     string
+	Snippet    template.HTML
+}
+
+type host struct {
+	HostId      string
 	DisplayName string
-	Description string
+}
+
+type link struct {
+	LinkId      string
+	DisplayName string
+}
+
+type incidentFields struct {
+	IncidentId string
+	Fields     string
+}
+
+type incidentFull struct {
+	IncidentId string
+	Rule       string
+	Host       *string
+	Link       *string
+	Snippet    template.HTML
 }
 
 type Anal struct{}
@@ -89,9 +117,9 @@ func (a Anal) CalcMax(n []float32) float32 {
 	return max
 }
 
-func MCQuery(cl *manticore.Client, query string) ([]string, *time.Duration, error) {
+func MCQuery(cl *manticore.Client, index string, query string) ([]string, *time.Duration, error) {
 	mcQuery := strings.Join(strings.Split(query, " "), "|")
-	search := manticore.NewSearch(mcQuery, "rules", "")
+	search := manticore.NewSearch(mcQuery, index, "")
 	search.Limit = 100
 	search.MaxMatches = 50000
 	qres, err := cl.RunQuery(search)
@@ -108,36 +136,37 @@ func MCQuery(cl *manticore.Client, query string) ([]string, *time.Duration, erro
 	return results, &qres.QueryTime, nil
 }
 
-func SearchIncidents(cl *manticore.Client, query string) ([]result, *time.Duration, error) {
-	ruleIDs, qtime, err := MCQuery(cl, query)
+func SearchIncidents(cl *manticore.Client, query string) ([]incidentFull, *time.Duration, error) {
+	incidentIDs, qtime, err := MCQuery(cl, "incidents", query)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	start := time.Now()
 
-	insertValues := make([]string, 0)
-	for i, ruleID := range ruleIDs {
-		insertValues = append(insertValues, fmt.Sprintf("(%v, '%v')", i, ruleID))
+	incidentValues := make([]string, 0)
+	for i, ruleID := range incidentIDs {
+		incidentValues = append(incidentValues, fmt.Sprintf("(%v, '%v')", i, ruleID))
 	}
 
-	if len(insertValues) == 0 {
+	if len(incidentValues) == 0 {
 		qt := time.Since(start) + *qtime
-		return []result{}, &qt, nil
+		return []incidentFull{}, &qt, nil
 	}
-	insertValuesStr := strings.Join(insertValues, ", \n")
+	incidentValuesStr := strings.Join(incidentValues, ", \n")
 
-	queryRaw := fmt.Sprintf(sqlstore.IncidentsList, insertValuesStr)
+	queryRaw := fmt.Sprintf(sqlstore.IncidentsList, incidentValuesStr)
+
 	rows, err := db.Query(queryRaw)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer rows.Close()
-	results := make([]result, 0)
+	results := make([]incidentFull, 0)
 	for rows.Next() {
-		var r result
+		var r incidentFull
 		var snip string
-		if err := rows.Scan(&r.IncidentId, &r.DisplayName, &r.Description); err != nil {
+		if err := rows.Scan(&r.IncidentId); err != nil {
 			return nil, nil, err
 		}
 		r.Snippet = template.HTML(strings.Replace(snip, "\n", "<br>", -1))
@@ -152,7 +181,7 @@ func SearchIncidents(cl *manticore.Client, query string) ([]result, *time.Durati
 func main() {
 	words := []string{"layer", "opposite", "waist", "become", "address", "adult", "upper", "twelve", "card", "prefer", "patient", "concerning", "welcome", "bread", "connect", "beyond", "law", "northern", "more", "gray", "west", "except", "OK", "negative", "nation", "program", "plenty", "wine", "information", "produce", "animal", "smart", "fear", "lock", "upper", "physical", "beautiful", "truck", "steady", "card", "walk", "rock", "bear", "grass", "hand", "odd", "proof", "decrease", "represent", "over", "quiet", "solve", "require", "important", "inform", "nose", "very", "crowd", "third", "request", "woman", "practical", "invite", "adjective", "wake", "soon", "itself", "relation", "fork", "food", "average", "change", "well", "each", "quality", "supply", "point", "dollar", "child", "pound", "balance", "suddenly", "cook", "notice", "traffic", "recognize", "drunk", "toilet", "always", "say", "reason", "under", "forget", "replace", "medical", "clothes", "breast", "straight", "duck", "admit"}
 
-	dburl := "postgresql://roswell@127.0.0.1:5432/nextdb?sslmode=disable"
+	dburl := "postgresql://postgres@127.0.0.1:5432/nextdb?sslmode=disable"
 
 	var err error
 	if db, err = sql.Open("postgres", dburl); err != nil {
@@ -163,46 +192,27 @@ func main() {
 	cl.SetServer("127.0.0.1", 9313)
 	cl.Open()
 
-	rows, err := db.Query(sqlstore.ListRules)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer rows.Close()
-
-	//_, err = cl.Sphinxql(
-	//	"create table incidents(incident_id text, create_time timestamp, update_time timestamp, rule_id text, display_name text, description text) morphology='stem_en';",
-	//)
-	//fmt.Println(err)
-
-	//rows, err = db.Query(sqlstore.ListIncidents)
+	//rows, err := db.Query(sqlstore.IncidentsListFull)
 	//if err != nil {
+	//	fmt.Println(err)
 	//	return
 	//}
 	//defer rows.Close()
-	//results := make([]result, 0, 10)
+	//results := make([]incidentFull, 0, 10)
 	//for rows.Next() {
-	//	var r result
-	//	if err := rows.Scan(&r.RuleId, &r.DisplayName, &r.Description); err != nil {
+	//	var h incidentFull
+	//	if err := rows.Scan(&h.IncidentId, &h.Fields); err != nil {
 	//		return
 	//	}
-	//	results = append(results, r)
+	//	results = append(results, h)
 	//}
 	//
-	//_, err = cl.Sphinxql("create table incidents (incident_id text, created_time timestamp, update_time timestamp, display_name text, description text);")
-	//if err != nil {
-	//	fmt.Println(err.Error())
-	//	return
-	//}
-	//
-	//for i, incrulItem := range results {
-	//	//fmt.Println(rule)
+	//for i, h := range results {
 	//	qStr := fmt.Sprintf(
-	//		`replace into rules values(%v, '%v', '%v', '%v')`,
+	//		`insert into incidents values(%v, '%v', '%v')`,
 	//		i,
-	//		incrulItem.RuleId,
-	//		incrulItem.DisplayName,
-	//		incrulItem.Description,
+	//		h.IncidentId,
+	//		h.Fields,
 	//	)
 	//	_, err = cl.Sphinxql(qStr)
 	//	if err != nil {
@@ -218,17 +228,17 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		q := r.FormValue("q")
 		if q == "" {
-			rows, err := db.Query(sqlstore.ListRules)
+			rows, err := db.Query(sqlstore.ListIncidentsFull)
 			if err != nil {
 				http.Error(w, err.Error(), 500)
 				return
 			}
 			defer rows.Close()
-			results := make([]result, 0, 10)
+			results := make([]homeItem, 0, 10)
 			for rows.Next() {
-				var r result
+				var r homeItem
 				var snip string
-				if err := rows.Scan(&r.IncidentId, &r.DisplayName, &r.Description); err != nil {
+				if err := rows.Scan(&r.IncidentId, &r.RuleId, &r.Target); err != nil {
 					http.Error(w, err.Error(), 404)
 					return
 				}

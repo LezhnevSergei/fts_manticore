@@ -24,8 +24,8 @@ const TplStrHome = `
 	<div class="row" style="padding: 1.5em 0; border-bottom: 1px solid #eee"><div class="col-sm-11 col-sm-offset-1">
 		<div style="font-size: 1.2em">
 			{{.IncidentId}}<br/>
-			{{.DisplayName}}<br/>
-			{{.Description}}<br/>
+			{{.RuleId}}<br/>
+			{{.Target}}<br/>
 		</div>
 	</div></div>
 	{{end}}
@@ -59,8 +59,9 @@ const TplStrResults = `
 	<div class="row" style="padding: 1.5em 0; border-bottom: 1px solid #eee"><div class="col-sm-11 col-sm-offset-1">
 		<div style="font-size: 1.2em">
 			{{.IncidentId}}<br/>
-			{{.DisplayName}}<br/>
-			{{.Description}}<br/>
+			{{.Rule}}<br/>
+			{{.Host}}<br/>
+			{{.Link}}<br/>
 		</div>
 	</div></div>
 	{{end}}
