@@ -24,8 +24,7 @@ const TplStrHome = `
 	<div class="row" style="padding: 1.5em 0; border-bottom: 1px solid #eee"><div class="col-sm-11 col-sm-offset-1">
 		<div style="font-size: 1.2em">
 			{{.IncidentId}}<br/>
-			{{.RuleId}}<br/>
-			{{.Target}}<br/>
+			{{.Fields}}<br/>
 		</div>
 	</div></div>
 	{{end}}
@@ -58,16 +57,17 @@ const TplStrResults = `
 	{{range .Results}}
 	<div class="row" style="padding: 1.5em 0; border-bottom: 1px solid #eee"><div class="col-sm-11 col-sm-offset-1">
 		<div style="font-size: 1.2em">
-			{{.IncidentId}}<br/>
-			{{.Rule}}<br/>
-			{{.Host}}<br/>
-			{{.Link}}<br/>
+			IncidentId: {{.IncidentId}}<br/>
+			RuleId: {{.RuleId}}<br/>
+			RuleDisplayName: {{.RuleDisplayName}}<br/>
+			RuleDescription: {{.RuleDescription}}<br/>
+			LinkId: {{.LinkId}}<br/>
+			Link: {{.Link}}<br/>
+			HostId: {{.HostId}}<br/>
+			Host: {{.Host}}<br/>
 		</div>
 	</div></div>
 	{{end}}
-	<div class="row" style="padding: 1.5em; background-color: #f1f1f1">
-		Text and database from <a href="http://opensourceshakespeare.org/">http://opensourceshakespeare.org/</a>
-    </div>
     </div>
   </body>
 </html>

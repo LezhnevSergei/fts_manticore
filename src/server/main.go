@@ -6,7 +6,6 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 
 	"github.com/manticoresoftware/go-sdk/manticore"
 
+	"mc_fts/src/server/analytics"
 	"mc_fts/src/server/sqlstore"
 	"mc_fts/src/server/templates"
 )
@@ -29,8 +29,7 @@ type result struct {
 
 type homeItem struct {
 	IncidentId string
-	RuleId     string
-	Target     string
+	Fields     string
 	Snippet    template.HTML
 }
 
@@ -56,65 +55,15 @@ type incidentFields struct {
 }
 
 type incidentFull struct {
-	IncidentId string
-	Rule       string
-	Host       *string
-	Link       *string
-	Snippet    template.HTML
-}
-
-type Anal struct{}
-
-func (a Anal) Print(searchTimes []float32) {
-	fmt.Printf("Median (%v): %v %v \n", len(searchTimes), a.CalcMedian(searchTimes), "ms")
-	fmt.Printf("Avg (%v)   : %v %v \n", len(searchTimes), a.CalcAvg(searchTimes), "ms")
-	fmt.Printf("Min (%v)   : %v %v \n", len(searchTimes), a.CalcMin(searchTimes), "ms")
-	fmt.Printf("Max (%v)   : %v %v \n", len(searchTimes), a.CalcMax(searchTimes), "ms")
-}
-
-func (a Anal) CalcMedian(n []float32) float32 {
-	sort.Slice(n, func(i, j int) bool { return n[i] < n[j] })
-	mNumber := len(n) / 2
-
-	if len(n)%2 != 0 {
-		return n[mNumber]
-	}
-
-	return (n[mNumber-1] + n[mNumber]) / 2
-}
-
-func (a Anal) CalcAvg(n []float32) float32 {
-	var sum float32 = 0
-
-	for _, t := range n {
-		sum += t
-	}
-
-	return sum / float32(len(n))
-}
-
-func (a Anal) CalcMin(n []float32) float32 {
-	var min float32 = 1000
-
-	for _, t := range n {
-		if t < min {
-			min = t
-		}
-	}
-
-	return min
-}
-
-func (a Anal) CalcMax(n []float32) float32 {
-	var max float32 = 0
-
-	for _, t := range n {
-		if t > max {
-			max = t
-		}
-	}
-
-	return max
+	IncidentId      string
+	RuleId          string
+	RuleDisplayName string
+	RuleDescription string
+	HostId          *string
+	Host            *string
+	LinkId          *string
+	Link            *string
+	Snippet         template.HTML
 }
 
 func MCQuery(cl *manticore.Client, index string, query string) ([]string, *time.Duration, error) {
@@ -166,7 +115,7 @@ func SearchIncidents(cl *manticore.Client, query string) ([]incidentFull, *time.
 	for rows.Next() {
 		var r incidentFull
 		var snip string
-		if err := rows.Scan(&r.IncidentId); err != nil {
+		if err := rows.Scan(&r.IncidentId, &r.RuleId, &r.RuleDisplayName, &r.RuleDescription, &r.LinkId, &r.Link, &r.HostId, &r.Host); err != nil {
 			return nil, nil, err
 		}
 		r.Snippet = template.HTML(strings.Replace(snip, "\n", "<br>", -1))
@@ -228,7 +177,7 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		q := r.FormValue("q")
 		if q == "" {
-			rows, err := db.Query(sqlstore.ListIncidentsFull)
+			rows, err := db.Query(sqlstore.IncidentsListFull)
 			if err != nil {
 				http.Error(w, err.Error(), 500)
 				return
@@ -238,7 +187,7 @@ func main() {
 			for rows.Next() {
 				var r homeItem
 				var snip string
-				if err := rows.Scan(&r.IncidentId, &r.RuleId, &r.Target); err != nil {
+				if err := rows.Scan(&r.IncidentId, &r.Fields); err != nil {
 					http.Error(w, err.Error(), 404)
 					return
 				}
@@ -271,8 +220,8 @@ func main() {
 				panic("Empty")
 			}
 
-			a := Anal{}
-			a.Print(searchTimes)
+			a := analytics.Anal{}
+			a.Show(searchTimes)
 
 			return
 		}
