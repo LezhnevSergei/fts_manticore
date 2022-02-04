@@ -20,38 +20,10 @@ import (
 
 var db *sql.DB
 
-type result struct {
-	IncidentId  string
-	DisplayName string
-	Description string
-	Snippet     template.HTML
-}
-
 type homeItem struct {
 	IncidentId string
 	Fields     string
 	Snippet    template.HTML
-}
-
-type searchItem struct {
-	IncidentId string
-	Fields     string
-	Snippet    template.HTML
-}
-
-type host struct {
-	HostId      string
-	DisplayName string
-}
-
-type link struct {
-	LinkId      string
-	DisplayName string
-}
-
-type incidentFields struct {
-	IncidentId string
-	Fields     string
 }
 
 type incidentFull struct {
