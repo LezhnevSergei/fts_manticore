@@ -65,6 +65,7 @@ const TplStrResults = `
 			Link: {{.Link}}<br/>
 			HostId: {{.HostId}}<br/>
 			Host: {{.Host}}<br/>
+			Severity: {{.Severity}}<br/>
 		</div>
 	</div></div>
 	{{end}}

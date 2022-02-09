@@ -35,14 +35,16 @@ type incidentFull struct {
 	Host            *string
 	LinkId          *string
 	Link            *string
+	Severity        string
 	Snippet         template.HTML
 }
 
-func MCQuery(cl *manticore.Client, index string, query string) ([]string, *time.Duration, error) {
+func MCQuery(cl *manticore.Client, index string, query string, offset int32) ([]string, *time.Duration, error) {
 	mcQuery := strings.Join(strings.Split(query, " "), "|")
 	search := manticore.NewSearch(mcQuery, index, "")
 	search.Limit = 100
 	search.MaxMatches = 50000
+	search.Offset = offset
 	qres, err := cl.RunQuery(search)
 	if err != nil {
 		return nil, nil, err
@@ -58,45 +60,60 @@ func MCQuery(cl *manticore.Client, index string, query string) ([]string, *time.
 }
 
 func SearchIncidents(cl *manticore.Client, query string) ([]incidentFull, *time.Duration, error) {
-	incidentIDs, qtime, err := MCQuery(cl, "incidents", query)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	start := time.Now()
-
-	incidentValues := make([]string, 0)
-	for i, ruleID := range incidentIDs {
-		incidentValues = append(incidentValues, fmt.Sprintf("(%v, '%v')", i, ruleID))
-	}
-
-	if len(incidentValues) == 0 {
-		qt := time.Since(start) + *qtime
-		return []incidentFull{}, &qt, nil
-	}
-	incidentValuesStr := strings.Join(incidentValues, ", \n")
-
-	queryRaw := fmt.Sprintf(sqlstore.IncidentsList, incidentValuesStr)
-
-	rows, err := db.Query(queryRaw)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer rows.Close()
-	results := make([]incidentFull, 0)
-	for rows.Next() {
-		var r incidentFull
-		var snip string
-		if err := rows.Scan(&r.IncidentId, &r.RuleId, &r.RuleDisplayName, &r.RuleDescription, &r.LinkId, &r.Link, &r.HostId, &r.Host); err != nil {
-			return nil, nil, err
+	var qt time.Duration
+	var res []incidentFull
+	i := int32(0)
+	for true {
+		fmt.Println(i)
+		if i >= 8 {
+			return res, &qt, nil
 		}
-		r.Snippet = template.HTML(strings.Replace(snip, "\n", "<br>", -1))
-		results = append(results, r)
+
+		incidentIDs, _, err := MCQuery(cl, "incidents", query, i*100)
+		if err != nil {
+			continue
+		}
+
+		incidentValues := make([]string, 0)
+		for i, incidentID := range incidentIDs {
+			incidentValues = append(incidentValues, fmt.Sprintf("(%v, '%v')", i, incidentID))
+		}
+
+		if len(incidentValues) == 0 {
+			continue
+		}
+		incidentValuesStr := strings.Join(incidentValues, ", \n")
+
+		queryRaw := fmt.Sprintf(sqlstore.IncidentsList, incidentValuesStr)
+
+		rows, err := db.Query(queryRaw)
+		if err != nil {
+			continue
+		}
+		defer rows.Close()
+		results := make([]incidentFull, 0)
+		for rows.Next() {
+			var r incidentFull
+			var snip string
+			if err := rows.Scan(&r.IncidentId, &r.RuleId, &r.RuleDisplayName, &r.RuleDescription, &r.LinkId, &r.Link, &r.HostId, &r.Host, &r.Severity); err != nil {
+				return nil, nil, err
+			}
+			r.Snippet = template.HTML(strings.Replace(snip, "\n", "<br>", -1))
+			results = append(results, r)
+		}
+
+		res = append(res, results...)
+
+		qt += time.Since(start)
+		if len(res) >= 50 {
+			return res[:50], &qt, nil
+		}
+
+		i++
 	}
 
-	qt := time.Since(start) + *qtime
-
-	return results, &qt, nil
+	return []incidentFull{}, &qt, nil
 }
 
 func main() {
@@ -200,6 +217,7 @@ func main() {
 
 		results, qtime, err := SearchIncidents(&cl, q)
 		if err != nil {
+			fmt.Println(err)
 			http.Error(w, err.Error(), 500)
 			return
 		}

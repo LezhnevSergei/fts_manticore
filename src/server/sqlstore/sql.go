@@ -1,7 +1,7 @@
 package sqlstore
 
 const IncidentsList = `
-select i.incident_id, r.rule_id, r.display_name, r.description, l.link_id, l.display_name, h.host_id, h.display_name
+select i.incident_id, r.rule_id, r.display_name, r.description, l.link_id, l.display_name, h.host_id, h.display_name, i.severity
 from (
          values %v
          ) as t (id, incident_id)
@@ -9,6 +9,7 @@ from (
 		 left join roswell.rules as r on i.rule_id = r.rule_id
 		 left join roswell.hosts as h on i.target->>'host_id' = h.host_id
 		 left join lucie.links as l on i.target->>'link_id' = l.link_id
+where i.severity = 'HIGH'
 limit 50;
 `
 
