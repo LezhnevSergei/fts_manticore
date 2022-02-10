@@ -36,15 +36,29 @@ type incidentFull struct {
 	LinkId          *string
 	Link            *string
 	Severity        string
+	Status          string
 	Snippet         template.HTML
 }
 
-func MCQuery(cl *manticore.Client, index string, query string, offset int32) ([]string, *time.Duration, error) {
+type IncidentFilter struct {
+	Severity string
+	Status   string
+}
+
+func MCQuery(cl *manticore.Client, index string, query string, offset int32, filter IncidentFilter) ([]string, *time.Duration, error) {
+	if filter.Severity != "" {
+		query += fmt.Sprintf(" INCIDENT_SEVERITY_%v", strings.ToUpper(filter.Severity))
+	}
+	if filter.Status != "" {
+		query += fmt.Sprintf(" INCIDENT_STATUS_%v", strings.ToUpper(filter.Status))
+	}
+
 	mcQuery := strings.Join(strings.Split(query, " "), "|")
 	search := manticore.NewSearch(mcQuery, index, "")
 	search.Limit = 100
 	search.MaxMatches = 50000
 	search.Offset = offset
+
 	qres, err := cl.RunQuery(search)
 	if err != nil {
 		return nil, nil, err
@@ -59,61 +73,45 @@ func MCQuery(cl *manticore.Client, index string, query string, offset int32) ([]
 	return results, &qres.QueryTime, nil
 }
 
-func SearchIncidents(cl *manticore.Client, query string) ([]incidentFull, *time.Duration, error) {
+func SearchIncidents(cl *manticore.Client, query string, filter IncidentFilter) ([]incidentFull, *time.Duration, error) {
 	start := time.Now()
-	var qt time.Duration
-	var res []incidentFull
-	i := int32(0)
-	for true {
-		fmt.Println(i)
-		if i >= 8 {
-			return res, &qt, nil
-		}
 
-		incidentIDs, _, err := MCQuery(cl, "incidents", query, i*100)
-		if err != nil {
-			continue
-		}
-
-		incidentValues := make([]string, 0)
-		for i, incidentID := range incidentIDs {
-			incidentValues = append(incidentValues, fmt.Sprintf("(%v, '%v')", i, incidentID))
-		}
-
-		if len(incidentValues) == 0 {
-			continue
-		}
-		incidentValuesStr := strings.Join(incidentValues, ", \n")
-
-		queryRaw := fmt.Sprintf(sqlstore.IncidentsList, incidentValuesStr)
-
-		rows, err := db.Query(queryRaw)
-		if err != nil {
-			continue
-		}
-		defer rows.Close()
-		results := make([]incidentFull, 0)
-		for rows.Next() {
-			var r incidentFull
-			var snip string
-			if err := rows.Scan(&r.IncidentId, &r.RuleId, &r.RuleDisplayName, &r.RuleDescription, &r.LinkId, &r.Link, &r.HostId, &r.Host, &r.Severity); err != nil {
-				return nil, nil, err
-			}
-			r.Snippet = template.HTML(strings.Replace(snip, "\n", "<br>", -1))
-			results = append(results, r)
-		}
-
-		res = append(res, results...)
-
-		qt += time.Since(start)
-		if len(res) >= 50 {
-			return res[:50], &qt, nil
-		}
-
-		i++
+	incidentIDs, _, err := MCQuery(cl, "incidents", query, 0, filter)
+	if err != nil {
+		return []incidentFull{}, nil, err
 	}
 
-	return []incidentFull{}, &qt, nil
+	incidentValues := make([]string, 0)
+	for i, incidentID := range incidentIDs {
+		incidentValues = append(incidentValues, fmt.Sprintf("(%v, '%v')", i, incidentID))
+	}
+
+	if len(incidentValues) == 0 {
+		return []incidentFull{}, nil, nil
+	}
+	incidentValuesStr := strings.Join(incidentValues, ", \n")
+
+	queryRaw := fmt.Sprintf(sqlstore.IncidentsList, incidentValuesStr)
+
+	rows, err := db.Query(queryRaw)
+	if err != nil {
+		return []incidentFull{}, nil, err
+	}
+	defer rows.Close()
+	results := make([]incidentFull, 0)
+	for rows.Next() {
+		var r incidentFull
+		var snip string
+		if err := rows.Scan(&r.IncidentId, &r.RuleId, &r.RuleDisplayName, &r.RuleDescription, &r.LinkId, &r.Link, &r.HostId, &r.Host, &r.Severity, &r.Status); err != nil {
+			return nil, nil, err
+		}
+		r.Snippet = template.HTML(strings.Replace(snip, "\n", "<br>", -1))
+		results = append(results, r)
+	}
+
+	qt := time.Since(start)
+
+	return results, &qt, nil
 }
 
 func main() {
@@ -128,20 +126,24 @@ func main() {
 
 	cl := manticore.NewClient()
 	cl.SetServer("127.0.0.1", 9313)
-	cl.Open()
+	_, err = cl.Open()
+	if err != nil {
+		panic(err)
+	}
 
-	//rows, err := db.Query(sqlstore.IncidentsListFull)
+	//rows, err := db.Query(sqlstore.IncidentsFieldsListFull)
 	//if err != nil {
 	//	fmt.Println(err)
 	//	return
 	//}
 	//defer rows.Close()
-	//results := make([]incidentFull, 0, 10)
+	//results := make([]homeItem, 0, 10)
 	//for rows.Next() {
-	//	var h incidentFull
+	//	var h homeItem
 	//	if err := rows.Scan(&h.IncidentId, &h.Fields); err != nil {
 	//		return
 	//	}
+	//
 	//	results = append(results, h)
 	//}
 	//
@@ -157,7 +159,8 @@ func main() {
 	//		fmt.Println(err.Error())
 	//		break
 	//	}
-	//	fmt.Println(i+1, "/", len(results))
+	//	var percent = (float32(i+1) / float32(len(results))) * 100
+	//	fmt.Printf("%v/100\n", percent)
 	//}
 
 	tplHome := template.Must(template.New(".").Parse(templates.TplStrHome))
@@ -165,8 +168,14 @@ func main() {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		q := r.FormValue("q")
-		if q == "" {
-			rows, err := db.Query(sqlstore.IncidentsListFull)
+		sev := r.FormValue("severity")
+		st := r.FormValue("status")
+		filter := IncidentFilter{
+			Severity: sev,
+			Status:   st,
+		}
+		if q == "" && sev == "" && st == "" {
+			rows, err := db.Query(sqlstore.IncidentsFieldsListPart)
 			if err != nil {
 				http.Error(w, err.Error(), 500)
 				return
@@ -191,15 +200,15 @@ func main() {
 		}
 		if q == "calculate" {
 			searchTimes := make([]float32, 0)
-			for i := 0; i < 10; i++ {
+			for i := 0; i < 1; i++ {
 				fmt.Println(i+1, "/", 10)
 				for _, word := range words {
-					_, qtime, err := SearchIncidents(&cl, word)
+					_, qtime, err := SearchIncidents(&cl, word, filter)
 					if err != nil {
 						http.Error(w, err.Error(), 500)
 						return
 					}
-					if qtime.Milliseconds() > 0 {
+					if qtime != nil && qtime.Milliseconds() > 0 {
 						searchTimes = append(searchTimes, float32(qtime.Milliseconds()))
 					}
 				}
@@ -215,13 +224,15 @@ func main() {
 			return
 		}
 
-		results, qtime, err := SearchIncidents(&cl, q)
+		results, qtime, err := SearchIncidents(&cl, q, filter)
 		if err != nil {
 			fmt.Println(err)
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		fmt.Println(qtime.Milliseconds())
+		if qtime != nil {
+			fmt.Println(qtime.Milliseconds())
+		}
 		tplResults.Execute(w, map[string]interface{}{
 			"Results": results,
 			"Query":   q,
